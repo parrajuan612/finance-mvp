@@ -24,9 +24,11 @@ func main() {
 	}
 
 	r := gin.Default()
+	r.LoadHTMLGlob("web/templates/*")
+	r.Static("/static", "./web/static")
 
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	r.GET("/", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "index.html", nil)
 	})
 
 	log.Println("Server running on :9080")
