@@ -1,10 +1,9 @@
 package main
 
 import (
-	"database/sql"
+	"finanzas-mvp/internal/adapters/handlers"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -12,25 +11,23 @@ import (
 )
 
 func main() {
+
 	_ = godotenv.Load()
 
-	db, err := sql.Open("pgx", os.Getenv("DB_DSN"))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if err := db.Ping(); err != nil {
-		log.Fatal(err)
-	}
-
 	r := gin.Default()
+
 	r.LoadHTMLGlob("web/templates/*")
 	r.Static("/static", "./web/static")
+
+	uploadHandler := handlers.NewUploadHandler()
 
 	r.GET("/", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "index.html", nil)
 	})
 
+	r.POST("/upload", uploadHandler.Upload)
+
 	log.Println("Server running on :9080")
+
 	r.Run(":9080")
 }
