@@ -12,15 +12,23 @@ import (
 	"github.com/google/uuid"
 )
 
-// ParseBancolombiaText convierte el texto plano extraído del PDF de Bancolombia
-// en una lista de domain.Movement (campos clave: Date, Description, Amount, Type).
-// Los IDs quedan como uuid.Nil porque en esta etapa aún no guardamos en BD.
+type BancolombiaParser struct{}
+
+func NewBancolombiaParser() *BancolombiaParser {
+	return &BancolombiaParser{}
+}
+
+func (p *BancolombiaParser) Parse(text string) ([]domain.Movement, error) {
+	return ParseBancolombiaText(text)
+}
+
+// ParseBancolombiaText_v3: agrupa por bloques (línea con fecha + siguientes líneas),
+// extrae números y decide cuál es VALOR y cuál SALDO con heurísticas basadas en prevBalance.
 func ParseBancolombiaText(text string) ([]domain.Movement, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, fmt.Errorf("texto vacío")
 	}
 
-	// 1) Intentar extraer año desde encabezado "DESDE: YYYY/MM/DD   HASTA: YYYY/MM/DD"
 	year := time.Now().Year()
 	reYear := regexp.MustCompile(`HASTA:\s*([0-9]{4})/[0-9]{2}/[0-9]{2}`)
 	if m := reYear.FindStringSubmatch(text); len(m) >= 2 {
@@ -29,155 +37,213 @@ func ParseBancolombiaText(text string) ([]domain.Movement, error) {
 		}
 	}
 
-	// 2) Preparaciones: líneas y regexes
 	lines := strings.Split(text, "\n")
-	// Línea que empieza con fecha d/m o dd/mm
+
+	// detecta línea que empieza con fecha d/m o dd/mm
 	reDateLine := regexp.MustCompile(`^\s*([0-9]{1,2})/([0-9]{1,2})\s+(.*)$`)
-	// números con miles (1,234,567.89) o sin miles (.90) ; captura -. and commas
+	// regex para extraer números (miles con comas y decimales)
 	reNum := regexp.MustCompile(`[-+]?\d{1,3}(?:,\d{3})*(?:\.\d+)?|[-+]?\.\d+`)
+	// regex para detectar si una línea tiene sólo números / espacios (nos ayuda a anexar balances en líneas separadas)
+	reNumericLine := regexp.MustCompile(`^[\s\d,.\-+]+$`)
+	// regex para recortar números finales de una descripción
+	reTrailingNums := regexp.MustCompile(`(?:\s+[-+]?\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*)+$`)
+
+	type block struct {
+		day   int
+		month int
+		lines []string
+	}
+
+	// 1) construir bloques por transacción (cada bloque comienza con una línea que contiene la fecha)
+	var blocks []block
+	var curr *block
+	for i := 0; i < len(lines); i++ {
+		ln := lines[i]
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		if m := reDateLine.FindStringSubmatch(ln); len(m) >= 4 {
+			// nueva transacción
+			day, _ := strconv.Atoi(m[1])
+			month, _ := strconv.Atoi(m[2])
+			curr = &block{day: day, month: month, lines: []string{m[3]}}
+			blocks = append(blocks, *curr)
+			// anexar siguientes 1-2 líneas si son "numéricas" o cortas y con números (pueden ser saldo/valor en otra línea)
+			for k := 1; k <= 2 && i+k < len(lines); k++ {
+				next := strings.TrimSpace(lines[i+k])
+				if next == "" {
+					continue
+				}
+				// si la línea siguiente es mayormente numérica o contiene números y no es muy larga, la anexamos
+				if reNumericLine.MatchString(next) || (len(reNum.FindAllString(next, -1)) >= 1 && len(next) < 80) {
+					curr.lines = append(curr.lines, next)
+					// marcar como consumida
+					i += 1
+				} else {
+					break
+				}
+			}
+		} else {
+			// línea que no inicia con fecha: si hay un bloque activo, anexar si parece pertenecer
+			if curr != nil {
+				trim := strings.TrimSpace(ln)
+				// anexar sólo si la línea no es un encabezado / footer evidente
+				if trim != "" {
+					curr.lines = append(curr.lines, trim)
+				}
+			}
+		}
+	}
 
 	var movements []domain.Movement
+	var prevBalance *float64
 
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		lineTrim := strings.TrimSpace(line)
-		if lineTrim == "" {
+	// 2) procesar cada bloque
+	for _, b := range blocks {
+		joined := strings.Join(b.lines, " ")
+		// extraer todos los números del bloque
+		numStrs := reNum.FindAllString(joined, -1)
+		nums := make([]float64, 0, len(numStrs))
+		for _, s := range numStrs {
+			nums = append(nums, parseNumber(s))
+		}
+
+		var value float64
+		var foundValue bool
+		var balance float64
+		var foundBalance bool
+
+		// heurística para decidir SALDO/VALOR
+		if len(nums) >= 2 {
+			// si existe prevBalance, elegir como SALDO el número más cercano a prevBalance
+			if prevBalance != nil {
+				// encontrar índice con mínima diferencia respecto a prevBalance
+				minIdx := 0
+				minDiff := abs(nums[0] - *prevBalance)
+				for idx := 1; idx < len(nums); idx++ {
+					d := abs(nums[idx] - *prevBalance)
+					if d < minDiff {
+						minDiff = d
+						minIdx = idx
+					}
+				}
+				// asumimos que el valor es el número inmediatamente anterior al saldo si existe
+				balance = nums[minIdx]
+				foundBalance = true
+				if minIdx-1 >= 0 {
+					value = nums[minIdx-1]
+					foundValue = true
+				} else {
+					// si no hay anterior, intentamos inferir value = balance - prevBalance
+					valCand := balance - *prevBalance
+					if !isAbsHuge(valCand) {
+						value = valCand
+						foundValue = true
+					}
+				}
+			} else {
+				// no hay prevBalance: asumimos el último número es SALDO y el anterior es VALOR
+				balance = nums[len(nums)-1]
+				foundBalance = true
+				value = nums[len(nums)-2]
+				foundValue = true
+			}
+		} else if len(nums) == 1 {
+			// sólo 1 número: preferimos interpretarlo como SALDO si prevBalance existe (y calcular value)
+			one := nums[0]
+			if prevBalance != nil {
+				balance = one
+				foundBalance = true
+				amt := balance - *prevBalance
+				if !isAbsHuge(amt) {
+					value = amt
+					foundValue = true
+				}
+			} else {
+				// sin prevBalance lo tratamos como valor directo
+				value = one
+				foundValue = true
+			}
+		} else {
+			// no hay números: saltamos
 			continue
 		}
 
-		// detecta línea que inicia con fecha
-		if m := reDateLine.FindStringSubmatch(line); len(m) >= 4 {
-			dayStr := m[1]
-			monthStr := m[2]
-			rest := m[3] // aquí viene descripción + (posiblemente) cantidades
-
-			// parsear día y mes
-			day, _ := strconv.Atoi(dayStr)
-			month, _ := strconv.Atoi(monthStr)
-
-			// descripción tentativa: quitamos números comunes al final (si existen)
-			// pero primero buscamos números en la misma línea
-			nums := reNum.FindAllString(rest, -1)
-
-			var amountStr string
-			var balanceStr string
-			description := rest
-
-			// Heurística 1: si hay números en la línea, el último suele ser el monto (o balance).
-			// Tomamos el último como amount tentativa.
-			if len(nums) > 0 {
-				amountStr = nums[len(nums)-1]
-				// description = rest hasta la posición del amount (intento)
-				idx := strings.LastIndex(rest, amountStr)
-				if idx > 0 {
-					description = strings.TrimSpace(rest[:idx])
-				} else {
-					description = strings.TrimSpace(rest)
-				}
-			} else {
-				// Heurística 2: mirar las próximas 1-2 líneas por números (amount o balance).
-				for j := i + 1; j <= i+2 && j < len(lines); j++ {
-					nl := strings.TrimSpace(lines[j])
-					if nl == "" {
-						continue
-					}
-					found := reNum.FindAllString(nl, -1)
-					if len(found) > 0 {
-						// si no teníamos amount, tomar el primer match como amount
-						if amountStr == "" {
-							amountStr = found[0]
-						} else if balanceStr == "" {
-							balanceStr = found[len(found)-1]
-						}
-					}
-				}
+		// Si no encontramos un valor válido, saltar
+		if !foundValue {
+			// actualizar prevBalance si encontramos balance
+			if foundBalance {
+				prevBalance = &balance
 			}
+			continue
+		}
 
-			// Si amountStr está vacío: intentar buscar en la siguiente línea la primera cantidad.
-			if amountStr == "" {
-				if i+1 < len(lines) {
-					found := reNum.FindAllString(lines[i+1], -1)
-					if len(found) > 0 {
-						amountStr = found[0]
-					}
-				}
+		// Normalizar descripción: eliminar números finales y compactar espacios
+		desc := joined
+		// eliminar trailing numeric tokens
+		desc = reTrailingNums.ReplaceAllString(desc, "")
+		desc = normalizeSpaces(desc)
+
+		// fecha
+		date := time.Date(year, time.Month(b.month), b.day, 0, 0, 0, 0, time.UTC)
+
+		typ := domain.TypeIncome
+		if value < 0 {
+			typ = domain.TypeExpense
+		}
+
+		mov := domain.Movement{
+			ID:          uuid.Nil,
+			UserID:      uuid.Nil,
+			AccountID:   uuid.Nil,
+			StatementID: nil,
+			CategoryID:  uuid.Nil,
+			Date:        date,
+			Description: desc,
+			Amount:      value,
+			Type:        typ,
+			CreatedAt:   time.Now(),
+		}
+		movements = append(movements, mov)
+
+		// actualizar prevBalance
+		if foundBalance {
+			prevBalance = &balance
+		} else {
+			// si no había balance y pudimos inferirlo (por ejemplo si tuvimos prevBalance y value calculado),
+			// podemos estimar nuevo balance = prevBalance + value
+			if prevBalance != nil {
+				est := *prevBalance + value
+				prevBalance = &est
 			}
-
-			// Limpieza y parse de amountStr
-			amount := 0.0
-			if amountStr != "" {
-				amount = parseNumber(amountStr)
-			}
-
-			// Decidir signo según la presencia de '-' en la cadena encontrada.
-			// Si el número no tenía signo, intentamos inferir: si parece grande y no tiene '-', lo dejamos positivo.
-			if strings.Contains(amountStr, "-") || strings.HasPrefix(strings.TrimSpace(rest), "-") {
-				amount = -abs(amount)
-			}
-
-			// formar fecha con año detectado (cuidado: si mes < startMonth, podría pertenecer a año anterior;
-			// para MVP asumimos todas las operaciones dentro del rango del periodo)
-			loc := time.UTC
-			date := time.Date(year, time.Month(month), day, 0, 0, 0, 0, loc)
-
-			// Normalizar descripción: eliminar múltiples espacios y caracteres extraños unicode
-			description = normalizeSpaces(description)
-
-			// crear movimiento
-			mov := domain.Movement{
-				ID:          uuid.Nil,
-				UserID:      uuid.Nil,
-				AccountID:   uuid.Nil,
-				StatementID: nil,
-				CategoryID:  uuid.Nil,
-				Date:        date,
-				Description: description,
-				Amount:      amount,
-				Type:        domain.TypeExpense,
-				CreatedAt:   time.Now(),
-			}
-			if amount >= 0 {
-				mov.Type = domain.TypeIncome
-			} else {
-				// monto negativo -> expense
-				mov.Type = domain.TypeExpense
-			}
-
-			movements = append(movements, mov)
 		}
 	}
 
 	if len(movements) == 0 {
-		return nil, fmt.Errorf("no se detectaron movimientos (se aplicaron heurísticas). Revisa el texto o ajusta el parser")
+		return nil, fmt.Errorf("no se detectaron movimientos")
 	}
-
 	return movements, nil
 }
 
 // parseNumber quita comas y convierte a float64. Maneja formatos como ".90" -> 0.90
 func parseNumber(s string) float64 {
 	s = strings.TrimSpace(s)
-	// normalizar signos y punto decimal
+	if s == "" {
+		return 0
+	}
 	neg := false
 	if strings.HasPrefix(s, "-") {
 		neg = true
 	}
-	// quitar signos +/-
 	s = strings.TrimPrefix(s, "+")
 	s = strings.TrimPrefix(s, "-")
-	// quitar comas de miles
 	s = strings.ReplaceAll(s, ",", "")
-	// si empieza con '.' añadir 0
 	if strings.HasPrefix(s, ".") {
 		s = "0" + s
 	}
-	// si está vacío -> 0
-	if s == "" {
-		return 0.0
-	}
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		return 0.0
+		return 0
 	}
 	if neg {
 		return -f
@@ -193,12 +259,16 @@ func abs(v float64) float64 {
 }
 
 func normalizeSpaces(s string) string {
-	// reemplaza múltiples espacios por uno, trim
-	// también normaliza algunos caracteres NO-ASCII comunes del PDF
 	s = strings.ReplaceAll(s, "\t", " ")
-	// quitar caracteres de control raros
-	s = strings.ReplaceAll(s, "\u00A0", " ") // NBSP
-	// compactar espacios
+	s = strings.ReplaceAll(s, "\u00A0", " ")
 	reMulti := regexp.MustCompile(`\s+`)
 	return strings.TrimSpace(reMulti.ReplaceAllString(s, " "))
+}
+
+// isAbsHuge evita aceptar diferencias absurdas (umbral arbitrario grande)
+func isAbsHuge(v float64) bool {
+	if v < 0 {
+		v = -v
+	}
+	return v > 1e9
 }

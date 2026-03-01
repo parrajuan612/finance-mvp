@@ -5,82 +5,131 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 )
 
-// ReadPDFUsingQPDF reads a PDF file, tries to decrypt it with the provided password using qpdf,
-// then extracts text using pdftotext. If the PDF is not encrypted qpdf will still copy it.
-// Returns the extracted text.
-func ReadPDFUsingQPDF(path string, password string) (string, error) {
-	// Validate input
-	if path == "" {
-		return "", fmt.Errorf("missing path")
+func ExtractText(path string, password string) (string, error) {
+	if err := validateInput(path); err != nil {
+		return "", err
 	}
 
-	// Ensure pdftotext and qpdf exist in PATH
-	if _, err := exec.LookPath("pdftotext"); err != nil {
-		return "", fmt.Errorf("pdftotext not found in PATH: %w", err)
-	}
-	if _, err := exec.LookPath("qpdf"); err != nil {
-		return "", fmt.Errorf("qpdf not found in PATH: %w", err)
+	if err := ensureDependencies(); err != nil {
+		return "", err
 	}
 
-	// Create a temp file for the decrypted PDF
-	tmpDir := os.TempDir()
-	tmpFile, err := os.CreateTemp(tmpDir, "dec-*.pdf")
+	tmpPath, err := createTempFile()
 	if err != nil {
-		return "", fmt.Errorf("no se pudo crear archivo temporal: %w", err)
+		return "", err
 	}
-	tmpPath := tmpFile.Name()
-	_ = tmpFile.Close()
-	// Ensure tmp file is removed
-	defer func() { _ = os.Remove(tmpPath) }()
+	defer os.Remove(tmpPath)
 
-	// Run qpdf to decrypt (or just copy) the input PDF to the tmpPath.
-	// Use --password=... argument. Note: pasar la contraseña en línea de comandos es ok para MVP,
-	// pero en producción podrías buscar una forma más segura.
-	qpdfArgs := []string{"--password=" + password, "--decrypt", path, tmpPath}
-	cmdQ := exec.Command("qpdf", qpdfArgs...)
-	// qpdf prints to stderr on some messages; capture output for debugging
-	var qout bytes.Buffer
-	cmdQ.Stderr = &qout
-	cmdQ.Stdout = &qout
-	if err := cmdQ.Run(); err != nil {
-		// si falla qpdf por contraseña o no-encrypted, intentamos fallback: copiar archivo original
-		// Pero normalmente qpdf falla si password es errónea.
-		return "", fmt.Errorf("qpdf error: %v - %s", err, qout.String())
+	if err := decryptPDF(path, password, tmpPath); err != nil {
+		return "", err
 	}
 
-	// Ahora extraemos texto con pdftotext. El '-' hace que la salida vaya a stdout.
-	cmdPD := exec.Command("pdftotext", "-layout", tmpPath, "-")
-	var out bytes.Buffer
-	var perr bytes.Buffer
-	cmdPD.Stdout = &out
-	cmdPD.Stderr = &perr
-	if err := cmdPD.Run(); err != nil {
-		return "", fmt.Errorf("pdftotext error: %v - %s", err, perr.String())
-	}
-
-	text := out.String()
-
-	// Si no se extrajo nada, devolvemos advertencia pero sin fallar en negro
-	if len(text) == 0 {
-		// Intenta una extracción alternativa (sin --layout) por si la distribución de columnas causó problemas
-		cmdPD2 := exec.Command("pdftotext", tmpPath, "-")
-		var out2 bytes.Buffer
-		var perr2 bytes.Buffer
-		cmdPD2.Stdout = &out2
-		cmdPD2.Stderr = &perr2
-		if err := cmdPD2.Run(); err == nil {
-			text = out2.String()
-		}
-	}
-
-	// Normaliza final de texto: si está vacío, devuelve error descriptivo
-	if len(text) == 0 {
-		// para debug, devuelve la ruta temporal (útil localmente)
-		return "", fmt.Errorf("extracción devolvió texto vacío (archivo temporal: %s)", filepath.Base(tmpPath))
+	text, err := extractText(tmpPath)
+	if err != nil {
+		return "", err
 	}
 
 	return text, nil
+}
+
+func validateInput(path string) error {
+	if path == "" {
+		return fmt.Errorf("missing path")
+	}
+	return nil
+}
+func ensureDependencies() error {
+
+	if _, err := exec.LookPath("qpdf"); err != nil {
+		return fmt.Errorf("qpdf not found in PATH: %w", err)
+	}
+
+	if _, err := exec.LookPath("pdftotext"); err != nil {
+		return fmt.Errorf("pdftotext not found in PATH: %w", err)
+	}
+
+	return nil
+}
+func createTempFile() (string, error) {
+
+	tmpFile, err := os.CreateTemp(os.TempDir(), "dec-*.pdf")
+	if err != nil {
+		return "", fmt.Errorf("no se pudo crear archivo temporal: %w", err)
+	}
+
+	path := tmpFile.Name()
+
+	err = tmpFile.Close()
+	if err != nil {
+		return "", err
+	}
+
+	return path, nil
+}
+func decryptPDF(inputPath, password, outputPath string) error {
+
+	args := []string{
+		"--password=" + password,
+		"--decrypt",
+		inputPath,
+		outputPath,
+	}
+
+	cmd := exec.Command("qpdf", args...)
+
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("qpdf error: %v - %s", err, output.String())
+	}
+
+	return nil
+}
+func extractText(path string) (string, error) {
+
+	text, err := runPDFToText(path, true)
+	if err != nil {
+		return "", err
+	}
+
+	if text == "" {
+		text, err = runPDFToText(path, false)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	if text == "" {
+		return "", fmt.Errorf("extracción devolvió texto vacío")
+	}
+
+	return text, nil
+}
+func runPDFToText(path string, useLayout bool) (string, error) {
+
+	args := []string{}
+
+	if useLayout {
+		args = append(args, "-layout")
+	}
+
+	args = append(args, path, "-")
+
+	cmd := exec.Command("pdftotext", args...)
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	cmd.Stdout = &out
+	cmd.Stderr = &errOut
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("pdftotext error: %v - %s", err, errOut.String())
+	}
+
+	return out.String(), nil
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"finanzas-mvp/internal/adapters/handlers"
+	"finanzas-mvp/internal/core/services"
 	"log"
 	"net/http"
 
@@ -18,8 +19,8 @@ func main() {
 
 	r.LoadHTMLGlob("web/templates/*")
 	r.Static("/static", "./web/static")
-
-	uploadHandler := handlers.NewUploadHandler()
+	statementService := services.NewStatementService()
+	uploadHandler := handlers.NewUploadHandler(statementService)
 
 	r.GET("/", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "index.html", nil)

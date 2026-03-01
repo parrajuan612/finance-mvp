@@ -1,21 +1,20 @@
 package handlers
 
 import (
-	"finanzas-mvp/internal/adapters/parsers"
-	"fmt"
-	"io"
+	"finanzas-mvp/internal/core/services"
 	"net/http"
-	"os"
-	"path/filepath"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-type UploadHandler struct{}
+type UploadHandler struct {
+	service *services.StatementService
+}
 
-func NewUploadHandler() *UploadHandler {
-	return &UploadHandler{}
+func NewUploadHandler(service *services.StatementService) *UploadHandler {
+	return &UploadHandler{
+		service: service,
+	}
 }
 
 func (h *UploadHandler) Upload(c *gin.Context) {
@@ -28,49 +27,12 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	defer file.Close()
 
 	password := c.PostForm("password")
-
-	fmt.Println("Password recibida:", password)
-
-	filename := fmt.Sprintf("%d_%s", time.Now().Unix(), header.Filename)
-
-	path := filepath.Join("storage", filename)
-
-	out, err := os.Create(path)
+	bankID := c.PostForm("bank_id")
+	err = h.service.ProcessStatement(file, header.Filename, password, bankID)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "no se pudo guardar archivo")
+		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	_, err = io.Copy(out, file)
-	if err != nil {
-		c.String(http.StatusInternalServerError, "error guardando archivo")
-		return
-	}
-
-	// CRÍTICO: cerrar antes de usar qpdf
-	err = out.Close()
-	if err != nil {
-		c.String(http.StatusInternalServerError, "error cerrando archivo")
-		return
-	}
-
-	fmt.Println("Archivo guardado en:", path)
-
-	// LEER PDF
-	text, err := parsers.ReadPDFUsingQPDF(path, password)
-
-	movs, err := parsers.ParseBancolombiaText(text)
-	if err != nil {
-		fmt.Println("Parser error:", err)
-	} else {
-		fmt.Println("Movimientos detectados:", len(movs))
-		for _, m := range movs {
-			fmt.Printf("%s | %s | %.2f | %s\n",
-				m.Date.Format("2006-01-02"),
-				m.Description,
-				m.Amount,
-				m.Type,
-			)
-		}
-	}
+	c.String(http.StatusOK, "Extracto procesado correctamente")
 }
