@@ -2,6 +2,7 @@ package services
 
 import (
 	"finanzas-mvp/internal/adapters/parsers"
+	"finanzas-mvp/internal/core/domain"
 	"fmt"
 	"io"
 	"os"
@@ -19,43 +20,35 @@ func NewStatementService(cat *Categorizer) *StatementService {
 	}
 }
 
-func (s *StatementService) ProcessStatement(file io.Reader, filename string, password string, bankID string) error {
+func (s *StatementService) ProcessStatement(file io.Reader, filename string, password string, bankID string) ([]domain.Movement, error) {
 	savedPath, err := s.saveFile(file, filename)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer os.Remove(savedPath) // Limpieza: borrar archivo tras procesar
+	defer os.Remove(savedPath)
 
 	text, err := parsers.ExtractText(savedPath, password)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	parser, err := parsers.NewParser(bankID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	movements, err := parser.Parse(text)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for i := range movements {
 
 		s.categorizer.Categorize(&movements[i])
 
-		fmt.Printf("%s | %-40s | %10.2f | %-10s | CAT: %d (%s)\n",
-			movements[i].Date.Format("2006-01-02"),
-			movements[i].Description,
-			movements[i].Amount,
-			movements[i].Type,
-			movements[i].CategoryID,   // El ID numérico (1, 2, 3...)
-			movements[i].CategoryName, // El nombre legible
-		)
 	}
 
-	return nil
+	return movements, nil
 }
 
 func (s *StatementService) saveFile(file io.Reader, filename string) (string, error) {

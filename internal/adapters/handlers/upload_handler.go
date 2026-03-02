@@ -18,7 +18,6 @@ func NewUploadHandler(service *services.StatementService) *UploadHandler {
 }
 
 func (h *UploadHandler) Upload(c *gin.Context) {
-
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
 		c.String(http.StatusBadRequest, "archivo requerido")
@@ -28,11 +27,15 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 
 	password := c.PostForm("password")
 	bankID := c.PostForm("bank_id")
-	err = h.service.ProcessStatement(file, header.Filename, password, bankID)
+
+	movements, err := h.service.ProcessStatement(file, header.Filename, password, bankID)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	c.String(http.StatusOK, "Extracto procesado correctamente")
+	c.HTML(http.StatusOK, "results.html", gin.H{
+		"Movements": movements,
+		"Filename":  header.Filename,
+	})
 }
