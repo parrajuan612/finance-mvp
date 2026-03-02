@@ -17,7 +17,6 @@ func NewMovementRepository(db *gorm.DB) ports.MovementRepository {
 }
 
 func (r *movementRepository) SaveBatch(ctx context.Context, movements []domain.Movement) error {
-	// Usamos transacciones de GORM para el Flujo 5 del documento (procesar extracto) [cite: 10]
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&movements).Error; err != nil {
 			return err

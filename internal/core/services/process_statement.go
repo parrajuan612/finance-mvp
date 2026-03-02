@@ -9,41 +9,52 @@ import (
 	"time"
 )
 
-type StatementService struct{}
+type StatementService struct {
+	categorizer *Categorizer // Inyectamos el servicio de categorización
+}
 
-func NewStatementService() *StatementService {
-	return &StatementService{}
+func NewStatementService(cat *Categorizer) *StatementService {
+	return &StatementService{
+		categorizer: cat,
+	}
 }
 
 func (s *StatementService) ProcessStatement(file io.Reader, filename string, password string, bankID string) error {
-
 	savedPath, err := s.saveFile(file, filename)
 	if err != nil {
 		return err
 	}
+	defer os.Remove(savedPath) // Limpieza: borrar archivo tras procesar
+
 	text, err := parsers.ExtractText(savedPath, password)
 	if err != nil {
 		return err
 	}
-	fmt.Println("====== RAW TEXT START ======")
-	fmt.Println(text)
-	fmt.Println("====== RAW TEXT END ======")
+
 	parser, err := parsers.NewParser(bankID)
 	if err != nil {
 		return err
 	}
+
 	movements, err := parser.Parse(text)
 	if err != nil {
 		return err
 	}
-	for _, m := range movements {
-		fmt.Printf("%s | %-60s | %12.2f | %s\n",
-			m.Date.Format("2006-01-02"),
-			m.Description,
-			m.Amount,
-			m.Type,
+
+	for i := range movements {
+
+		s.categorizer.Categorize(&movements[i])
+
+		fmt.Printf("%s | %-40s | %10.2f | %-10s | CAT: %d (%s)\n",
+			movements[i].Date.Format("2006-01-02"),
+			movements[i].Description,
+			movements[i].Amount,
+			movements[i].Type,
+			movements[i].CategoryID,   // El ID numérico (1, 2, 3...)
+			movements[i].CategoryName, // El nombre legible
 		)
 	}
+
 	return nil
 }
 
