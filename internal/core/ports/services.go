@@ -3,8 +3,20 @@ package ports
 import (
 	"context"
 	"finanzas-mvp/internal/core/domain"
+	"io"
 )
 
-type ParserService interface {
-	Parse(ctx context.Context, filePath string) ([]domain.Movement, error)
+type StatementService interface {
+	ProcessStatement(
+		file io.Reader,
+		fileName string,
+		password string,
+		bankID string,
+	) ([]domain.Movement, string, error)
+
+	SaveStatementWithMovements(
+		ctx context.Context,
+		statement domain.Statement,
+		movements []domain.Movement,
+	) error
 }

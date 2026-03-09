@@ -10,45 +10,34 @@ import (
 	"time"
 )
 
-type StatementService struct {
-	categorizer *Categorizer // Inyectamos el servicio de categorización
-}
-
-func NewStatementService(cat *Categorizer) *StatementService {
-	return &StatementService{
-		categorizer: cat,
-	}
-}
-
-func (s *StatementService) ProcessStatement(file io.Reader, filename string, password string, bankID string) ([]domain.Movement, error) {
+func (s *StatementService) ProcessStatement(file io.Reader, filename string, password string, bankID string) ([]domain.Movement, string, error) {
 	savedPath, err := s.saveFile(file, filename)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer os.Remove(savedPath)
 
 	text, err := parsers.ExtractText(savedPath, password)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	parser, err := parsers.NewParser(bankID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	movements, err := parser.Parse(text)
+	movements, periodMonth, err := parser.Parse(text)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-
 	for i := range movements {
 
 		s.categorizer.Categorize(&movements[i])
 
 	}
-	fmt.Println(movements)
-	return movements, nil
+
+	return movements, periodMonth, nil
 }
 
 func (s *StatementService) saveFile(file io.Reader, filename string) (string, error) {

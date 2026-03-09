@@ -1,35 +1,32 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Resultados del Extracto</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-
-    <script>
-        function eliminarFila(btn){
-            const row = btn.closest("tr")
-            row.remove()
-        }
-    </script>
-
+<meta charset="UTF-8">
+<title>Resultados del Extracto</title>
+<script src="https://cdn.tailwindcss.com"></script>
 </head>
 
 <body class="bg-slate-50 p-8">
 
 <div class="max-w-6xl mx-auto">
 
-    <div class="flex justify-between items-center mb-8">
-        <h1 class="text-3xl font-bold text-slate-800">Movimientos Detectados</h1>
-        <a href="/" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition">
-            Subir otro
-        </a>
-    </div>
+<div class="flex justify-between items-center mb-8">
+<h1 class="text-3xl font-bold text-slate-800">Movimientos Detectados</h1>
 
-<form method="POST" action="/save-movements">
+<a href="/" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition">
+Subir otro
+</a>
+</div>
+
+<form id="saveForm" method="POST" action="/save-movements" onsubmit="prepareAndSubmit(event)">
+
+<input type="hidden" name="period_month" value="{{ .Periodmonth }}">
+<input type="hidden" name="file_name" value="{{ .Filename }}">
+<input type="hidden" name="movements_json" id="movements_json">
 
 <div class="bg-white shadow-xl rounded-2xl overflow-hidden border border-slate-200">
 
-<table class="w-full text-left border-collapse">
+<table id="movementsTable" class="w-full text-left border-collapse">
 
 <thead>
 <tr class="bg-slate-100 border-b border-slate-200">
@@ -48,30 +45,19 @@
 <tr class="hover:bg-slate-50 transition">
 
 <td class="p-4 text-slate-500 whitespace-nowrap">
-
 {{ $m.Date.Format "2006-01-02" }}
-
-<input type="hidden" name="movements[{{$index}}].date" value="{{ $m.Date.Format "2006-01-02" }}">
-
+<input type="hidden" class="row-date" value="{{ $m.Date.Format "2006-01-02" }}">
 </td>
 
 <td class="p-4">
-
 <input
 type="text"
-name="movements[{{$index}}].description"
-value="{{ $m.Description }}"
-class="w-full border rounded-lg p-2 text-slate-700"
-/>
-
+class="row-desc w-full border rounded-lg p-2 text-slate-700"
+value="{{ $m.Description }}">
 </td>
 
 <td class="p-4">
-
-
-<select
-name="movements[{{$index}}].category_id"
-class="w-full border rounded-lg p-2">
+<select class="row-cat w-full border rounded-lg p-2">
 
 <option value="1" {{ if eq $m.CategoryID 1 }}selected{{ end }}>
 Restaurante/Comida/Supermercado
@@ -93,45 +79,19 @@ Servicios/Suscripciones
 Transporte
 </option>
 
-<option value="6" {{ if eq $m.CategoryID 6 }}selected{{ end }}>
-Viajes
-</option>
-
-<option value="7" {{ if eq $m.CategoryID 7 }}selected{{ end }}>
-Educación
-</option>
-
-<option value="8" {{ if eq $m.CategoryID 8 }}selected{{ end }}>
-Entretenimiento
-</option>
-
-<option value="9" {{ if eq $m.CategoryID 9 }}selected{{ end }}>
-Hogar/Alquiler
-</option>
-
-<option value="10" {{ if eq $m.CategoryID 10 }}selected{{ end }}>
-Salario
-</option>
-
-<option value="11" {{ if eq $m.CategoryID 11 }}selected{{ end }}>
-Otros Ingresos
-</option>
-
 <option value="12" {{ if eq $m.CategoryID 12 }}selected{{ end }}>
 Otros Gastos
 </option>
 
 </select>
-
-
 </td>
 
 <td class="p-4 text-right font-bold {{ if eq $m.Type "income" }} text-green-600 {{ else }} text-red-600 {{ end }}">
 
-$ {{ printf "%.2f" $m.Amount }}
+<span class="amount-display">$ {{ printf "%.2f" $m.Amount }}</span>
 
-<input type="hidden" name="movements[{{$index}}].amount" value="{{ $m.Amount }}">
-<input type="hidden" name="movements[{{$index}}].type" value="{{ $m.Type }}">
+<input type="hidden" class="row-amount" value="{{ printf "%.2f" $m.Amount }}">
+<input type="hidden" class="row-type" value="{{ $m.Type }}">
 
 </td>
 
@@ -162,7 +122,7 @@ Eliminar
 
 <button
 type="submit"
-class="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 font-semibold">
+class="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 font-semibold shadow-lg">
 
 Guardar Movimientos
 
@@ -173,6 +133,179 @@ Guardar Movimientos
 </form>
 
 </div>
+
+<!-- LOADING -->
+
+<div id="loadingOverlay"
+class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+
+<div class="bg-white p-6 rounded-xl shadow-lg flex items-center gap-3">
+
+<div class="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+
+<span class="text-slate-700 font-semibold">
+Guardando movimientos...
+</span>
+
+</div>
+
+</div>
+
+<!-- SUCCESS -->
+
+<div id="successToast"
+class="hidden fixed bottom-6 right-6 bg-green-600 text-white px-6 py-4 rounded-xl shadow-xl">
+</div>
+
+<!-- ERROR -->
+
+<div id="errorToast"
+class="hidden fixed bottom-6 right-6 bg-red-600 text-white px-6 py-4 rounded-xl shadow-xl">
+</div>
+
+<script>
+
+// Formatear montos
+document.addEventListener("DOMContentLoaded", () => {
+
+document.querySelectorAll('.amount-display').forEach(span => {
+
+const text = span.innerText.replace('$','').trim()
+const number = parseFloat(text)
+
+if(!isNaN(number)){
+
+span.innerText='$ '+number.toLocaleString('en-US',{
+minimumFractionDigits:2,
+maximumFractionDigits:2
+})
+
+}
+
+})
+
+})
+
+// eliminar fila
+
+function eliminarFila(btn){
+btn.closest("tr").remove()
+}
+
+// loading
+
+function mostrarLoading(){
+document.getElementById("loadingOverlay").classList.remove("hidden")
+}
+
+function ocultarLoading(){
+document.getElementById("loadingOverlay").classList.add("hidden")
+}
+
+// success
+
+function mostrarExito(msg){
+
+ocultarLoading()
+
+const toast=document.getElementById("successToast")
+toast.innerText=msg || "Movimientos guardados correctamente"
+toast.classList.remove("hidden")
+
+setTimeout(()=>{
+
+toast.classList.add("hidden")
+window.location.href="/"
+
+},3000)
+
+}
+
+// error
+
+function mostrarError(msg){
+
+ocultarLoading()
+
+const toast=document.getElementById("errorToast")
+toast.innerText=msg
+toast.classList.remove("hidden")
+
+setTimeout(()=>{
+
+toast.classList.add("hidden")
+
+},4000)
+
+}
+
+// enviar
+
+async function prepareAndSubmit(e){
+
+e.preventDefault()
+
+const table=document.getElementById('movementsTable')
+const rows=table.querySelectorAll('tbody tr')
+const data=[]
+
+rows.forEach(row=>{
+
+const date=row.querySelector('.row-date')?.value || ''
+const description=row.querySelector('.row-desc')?.value || ''
+const category=row.querySelector('.row-cat')?.value || '0'
+const amountRaw=row.querySelector('.row-amount')?.value || '0'
+const type=row.querySelector('.row-type')?.value || ''
+
+data.push({
+
+date:date,
+description:description,
+category_id:parseInt(category),
+amount:parseFloat(amountRaw) || 0,
+type:type
+
+})
+
+})
+
+document.getElementById('movements_json').value=JSON.stringify(data)
+
+const form=document.getElementById("saveForm")
+const formData=new FormData(form)
+
+mostrarLoading()
+
+try{
+
+const response=await fetch("/save-movements",{
+
+method:"POST",
+body:formData
+
+})
+
+const text=await response.text()
+
+if(response.ok){
+
+mostrarExito(text)
+
+}else{
+
+mostrarError(text)
+
+}
+
+}catch(err){
+
+mostrarError("Error de conexión con el servidor")
+
+}
+
+}
+
+</script>
 
 </body>
 </html>

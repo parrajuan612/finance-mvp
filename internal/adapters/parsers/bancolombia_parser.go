@@ -27,11 +27,18 @@ func NewBancolombiaParser() *BancolombiaParser {
 	return &BancolombiaParser{}
 }
 
-func (p *BancolombiaParser) Parse(text string) ([]domain.Movement, error) {
+func (p *BancolombiaParser) Parse(text string) ([]domain.Movement, string, error) {
 	if strings.TrimSpace(text) == "" {
-		return nil, fmt.Errorf("texto vacío")
+		return nil, "", fmt.Errorf("texto vacío")
 	}
+	periodMonth, perr := ExtractPeriodMonth(text)
+	if perr != nil {
+		// opción A: devolver error y que el caller decida (más estricto)
+		// return nil, "", perr
 
+		// opción B: loguear y seguir (menos frágil) -> aquí sigo y devuelvo periodMonth == ""
+		periodMonth = ""
+	}
 	year := p.extractYear(text)
 	lines := strings.Split(text, "\n")
 	var movements []domain.Movement
@@ -45,10 +52,10 @@ func (p *BancolombiaParser) Parse(text string) ([]domain.Movement, error) {
 	}
 
 	if len(movements) == 0 {
-		return nil, fmt.Errorf("no se detectaron movimientos válidos")
+		return nil, "", fmt.Errorf("no se detectaron movimientos válidos")
 	}
 
-	return movements, nil
+	return movements, periodMonth, nil
 }
 
 // parseLine se encarga de extraer la data de un string

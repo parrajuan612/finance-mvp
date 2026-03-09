@@ -1,0 +1,48 @@
+2026/03/09 11:31:42 Server running on :9080
+2026/03/09 13:49:34 Server running on :9080
+2026/03/09 14:15:15 Server running on :9080
+2026/03/09 14:34:44 Server running on :9080
+2026/03/09 14:43:42 Server running on :9080
+2026/03/09 15:49:05 failed to connect to database: cannot parse `host= user= password=xxxxx dbname= port= sslmode=disable TimeZone=America/Bogota`: invalid port (strconv.ParseUint: parsing "sslmode=disable": invalid syntax)
+2026/03/09 15:52:41 InitServer: empezando
+2026/03/09 15:52:41 InitServer: templates y static cargados
+2026/03/09 15:52:41 InitServer: inicializando DB...
+2026/03/09 15:52:41 InitServer: error InitPostgres: failed to connect to database: cannot parse `host= user= password=xxxxx dbname= port= sslmode=disable TimeZone=America/Bogota`: invalid port (strconv.ParseUint: parsing "sslmode=disable": invalid syntax)
+2026/03/09 15:52:58 InitServer: empezando
+2026/03/09 15:52:58 InitServer: templates y static cargados
+2026/03/09 15:52:58 InitServer: inicializando DB...
+2026/03/09 15:52:58 InitServer: error InitPostgres: failed to connect to database: cannot parse `host= user= password=xxxxx dbname= port= sslmode=disable TimeZone=America/Bogota`: invalid port (strconv.ParseUint: parsing "sslmode=disable": invalid syntax)
+2026/03/09 15:56:14 failed to connect to database: cannot parse `host= user= password=xxxxx dbname= port= sslmode=disable TimeZone=America/Bogota`: invalid port (strconv.ParseUint: parsing "sslmode=disable": invalid syntax)
+2026/03/09 15:56:16 failed to connect to database: cannot parse `host= user= password=xxxxx dbname= port= sslmode=disable TimeZone=America/Bogota`: invalid port (strconv.ParseUint: parsing "sslmode=disable": invalid syntax)
+2026/03/09 15:59:02 ❌ ERROR CRÍTICO DB: failed to connect to database: cannot parse `host= user= password=xxxxx dbname= port= sslmode=disable TimeZone=America/Bogota`: invalid port (strconv.ParseUint: parsing "sslmode=disable": invalid syntax)
+2026/03/09 16:03:22 ❌ ERROR CRÍTICO DB: failed to connect to database: cannot parse `host= user= password=xxxxx dbname= port= sslmode=disable TimeZone=America/Bogota`: invalid port (strconv.ParseUint: parsing "sslmode=disable": invalid syntax)
+2026/03/09 16:04:10 ✅ Conexión a base de datos exitosa
+2026/03/09 16:04:10 Server running on :9080
+2026/03/09 16:09:37 ✅ Conexión a base de datos exitosa
+2026/03/09 16:09:37 Server running on :9080
+2026/03/09 16:11:57 ✅ Conexión a base de datos exitosa
+2026/03/09 16:11:57 Server running on :9080
+2026/03/09 16:15:14 ✅ Conexión a base de datos exitosa
+2026/03/09 16:15:14 Server running on :9080
+2026/03/09 16:18:29 ✅ Conexión a base de datos exitosa
+2026/03/09 16:18:29 Server running on :9080
+2026/03/09 16:22:51 ✅ Conexión a base de datos exitosa
+2026/03/09 16:22:51 Server running on :9080
+2026/03/09 16:25:39 ✅ Conexión a base de datos exitosa
+2026/03/09 16:25:39 Server running on :9080
+2026/03/09 16:26:45 ✅ Conexión a base de datos exitosa
+2026/03/09 16:26:45 Server running on :9080
+2026/03/09 16:28:35 ✅ Conexión a base de datos exitosa
+2026/03/09 16:28:35 Server running on :9080
+2026/03/09 16:36:59 ✅ Conexión a base de datos exitosa
+2026/03/09 16:36:59 Server running on :9080
+2026/03/09 16:52:56 ✅ Conexión a base de datos exitosa
+2026/03/09 16:52:56 Server running on :9080
+2026/03/09 17:00:31 ✅ Conexión a base de datos exitosa
+2026/03/09 17:00:31 Server running on :9080
+2026/03/09 17:06:09 ✅ Conexión a base de datos exitosa
+2026/03/09 17:06:09 Server running on :9080
+2026/03/09 17:14:28 ✅ Conexión a base de datos exitosa
+2026/03/09 17:14:28 Server running on :9080
+2026/03/09 17:22:44 ✅ Conexión a base de datos exitosa
+2026/03/09 17:22:44 Server running on :9080

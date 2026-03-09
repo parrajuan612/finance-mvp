@@ -33,9 +33,9 @@ func NewNuParser() *NuParser {
 	return &NuParser{}
 }
 
-func (p *NuParser) Parse(text string) ([]domain.Movement, error) {
+func (p *NuParser) Parse(text string) ([]domain.Movement, string, error) {
 	if strings.TrimSpace(text) == "" {
-		return nil, fmt.Errorf("texto vacío")
+		return nil, "", fmt.Errorf("texto vacío")
 	}
 
 	lines := strings.Split(text, "\n")
@@ -126,10 +126,10 @@ func (p *NuParser) Parse(text string) ([]domain.Movement, error) {
 	}
 
 	if len(movements) == 0 {
-		return nil, fmt.Errorf("no se detectaron movimientos en Nu")
+		return nil, "", fmt.Errorf("no se detectaron movimientos en Nu")
 	}
 
-	return movements, nil
+	return movements, "2025", nil
 }
 
 // parseNuNumber convierte formato de Nu ($47.000,00 -> 47000.00)
