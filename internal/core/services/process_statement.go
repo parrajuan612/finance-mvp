@@ -47,7 +47,7 @@ func (s *StatementService) ProcessStatement(file io.Reader, filename string, pas
 		s.categorizer.Categorize(&movements[i])
 
 	}
-
+	fmt.Println(movements)
 	return movements, nil
 }
 
