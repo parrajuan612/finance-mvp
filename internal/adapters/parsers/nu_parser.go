@@ -37,7 +37,15 @@ func (p *NuParser) Parse(text string) ([]domain.Movement, string, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, "", fmt.Errorf("texto vacío")
 	}
+	periodMonth, perr := ExtractNuPeriodMonth(text)
 
+	if perr != nil {
+
+		// igual que en bancolombia
+		// puedes decidir si fallar o seguir
+
+		periodMonth = ""
+	}
 	lines := strings.Split(text, "\n")
 	var movements []domain.Movement
 	defaultYear := time.Now().Year() // Por si no encontramos el año
@@ -129,7 +137,7 @@ func (p *NuParser) Parse(text string) ([]domain.Movement, string, error) {
 		return nil, "", fmt.Errorf("no se detectaron movimientos en Nu")
 	}
 
-	return movements, "2025", nil
+	return movements, periodMonth, nil
 }
 
 // parseNuNumber convierte formato de Nu ($47.000,00 -> 47000.00)

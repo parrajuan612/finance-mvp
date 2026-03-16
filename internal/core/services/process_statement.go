@@ -18,6 +18,7 @@ func (s *StatementService) ProcessStatement(file io.Reader, filename string, pas
 	defer os.Remove(savedPath)
 
 	text, err := parsers.ExtractText(savedPath, password)
+
 	if err != nil {
 		return nil, "", err
 	}
@@ -28,6 +29,7 @@ func (s *StatementService) ProcessStatement(file io.Reader, filename string, pas
 	}
 
 	movements, periodMonth, err := parser.Parse(text)
+	fmt.Println("esto es", periodMonth)
 	if err != nil {
 		return nil, "", err
 	}
